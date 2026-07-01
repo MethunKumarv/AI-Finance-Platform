@@ -21,6 +21,8 @@ model User {
   transactions  Transaction[]
   accounts      Account[]
   budgets       Budget[]
+  insightCaches InsightCache[]
+  aiCategories  AICategory[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -49,13 +51,17 @@ model Transaction {
   amount           Decimal
   description      String?
   date             DateTime
-  category         String           
+  category         String
   receiptUrl       String?
   isRecurring      Boolean           @default(false)
   recurringInterval RecurringInterval? // Only used if isRecurring is true
   nextRecurringDate DateTime?         // Next date for recurring transaction
   lastProcessed    DateTime?         // Last time this recurring transaction was processed
   status           TransactionStatus  @default(COMPLETED)
+  aiCategoryConfidence Float?         // 0-1 confidence score for auto-categorized items
+  aiCategorizedAt  DateTime?         // When AI categorized this
+  isAnomalous      Boolean           @default(false)
+  anomalyReason    String?           // Why it was flagged as anomalous
   userId           String
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   accountId        String
@@ -80,6 +86,36 @@ model Budget {
 
   @@index([userId])
   @@map("budgets")
+}
+
+model InsightCache {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String    // "spending_analysis", "anomaly_summary", "forecast", "health_score", "insights"
+  period        String    // "7d", "30d", "90d", "all"
+  data          Json      // Cached insight data
+  generatedAt   DateTime  @default(now())
+  expiresAt     DateTime
+
+  @@unique([userId, type, period])
+  @@index([userId, expiresAt])
+  @@map("insight_caches")
+}
+
+model AICategory {
+  id                 String    @id @default(uuid())
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  description        String
+  predictedCategory  String
+  confidence         Float
+  actualCategory     String?   // User correction if different
+  feedback           Boolean   // Did user accept suggestion?
+  createdAt          DateTime  @default(now())
+
+  @@index([userId])
+  @@map("ai_categories")
 }
 
 enum TransactionType {

@@ -21,11 +21,12 @@ import {
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
-import { CalendarIcon, Loader2 } from "lucide-react";
+import { CalendarIcon, Loader2, Sparkles, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { ReceiptUpload } from "@/components/receipt-upload";
 
 const INCOME_CATEGORIES = [
   "salary",
@@ -78,6 +79,9 @@ function formatCategoryLabel(cat) {
 export default function TransactionForm({ accounts, defaultAccountId }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [suggestedCategory, setSuggestedCategory] = useState(null);
+  const [suggestingCategory, setSuggestingCategory] = useState(false);
+  const [showReceiptUpload, setShowReceiptUpload] = useState(false);
 
   const {
     register,
@@ -102,8 +106,49 @@ export default function TransactionForm({ accounts, defaultAccountId }) {
   const type = watch("type");
   const isRecurring = watch("isRecurring");
   const date = watch("date");
+  const description = watch("description");
+  const amount = watch("amount");
+  const currentCategory = watch("category");
 
   const categories = type === "INCOME" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+
+  // AI categorization effect
+  useEffect(() => {
+    const suggestCategory = async () => {
+      if (description?.trim() && amount && type) {
+        setSuggestingCategory(true);
+        try {
+          const response = await fetch("/api/ai/categorize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              description: description.trim(),
+              amount: parseFloat(amount),
+              type: type,
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.category && data.confidence > 0.5) {
+              setSuggestedCategory(data);
+            } else {
+              setSuggestedCategory(null);
+            }
+          }
+        } catch (error) {
+          console.error("Error getting category suggestion:", error);
+        } finally {
+          setSuggestingCategory(false);
+        }
+      } else {
+        setSuggestedCategory(null);
+      }
+    };
+
+    const timer = setTimeout(suggestCategory, 800); // Debounce
+    return () => clearTimeout(timer);
+  }, [description, amount, type]);
 
   const onSubmit = async (values) => {
     setLoading(true);
@@ -187,9 +232,35 @@ export default function TransactionForm({ accounts, defaultAccountId }) {
 
       {/* Category */}
       <div className="space-y-1">
-        <label className="text-sm font-medium">Category</label>
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium">Category</label>
+          {suggestedCategory && (
+            <button
+              type="button"
+              onClick={() => {
+                setValue("category", suggestedCategory.category);
+                setSuggestedCategory(null);
+              }}
+              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 transition-colors"
+            >
+              {currentCategory === suggestedCategory.category ? (
+                <>
+                  <CheckCircle className="w-3 h-3" />
+                  Applied
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3 h-3" />
+                  AI suggests:{" "}
+                  {formatCategoryLabel(suggestedCategory.category)}
+                  {Math.round(suggestedCategory.confidence * 100)}%
+                </>
+              )}
+            </button>
+          )}
+        </div>
         <Select
-          value={watch("category")}
+          value={currentCategory}
           onValueChange={(val) => setValue("category", val)}
         >
           <SelectTrigger className="w-full">
@@ -244,8 +315,41 @@ export default function TransactionForm({ accounts, defaultAccountId }) {
           Description{" "}
           <span className="text-muted-foreground font-normal">(optional)</span>
         </label>
-        <Input placeholder="Add a note..." {...register("description")} />
+        <div className="flex gap-2">
+          <Input placeholder="Add a note..." {...register("description")} className="flex-1" />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowReceiptUpload(!showReceiptUpload)}
+            title="Upload receipt photo"
+          >
+            📸
+          </Button>
+        </div>
       </div>
+
+      {/* Receipt Upload */}
+      {showReceiptUpload && (
+        <ReceiptUpload
+          onExtract={(data) => {
+            setValue("amount", data.amount.toString());
+            setValue("description", data.description || data.merchant);
+            if (data.category) {
+              setValue("category", data.category);
+            }
+            if (data.date) {
+              try {
+                setValue("date", new Date(data.date));
+              } catch (e) {
+                console.log("Date parse error");
+              }
+            }
+            setShowReceiptUpload(false);
+          }}
+          onClose={() => setShowReceiptUpload(false)}
+        />
+      )}
 
       {/* Recurring */}
       <div className="flex items-center justify-between rounded-lg border p-3">

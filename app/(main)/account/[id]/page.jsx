@@ -4,6 +4,7 @@ import { BarLoader } from "react-spinners";
 import { TransactionTable } from "../_components/transaction-table";
 import { notFound } from "next/navigation";
 import { AccountChart } from "../_components/account-chart";
+import { AnomalySummary } from "@/components/insights/anomaly-alert";
 
 export default async function AccountPage({ params }) {
   const { id } = await params;
@@ -44,6 +45,13 @@ export default async function AccountPage({ params }) {
       >
         <AccountChart transactions={transactions} />
       </Suspense>
+
+      {/* Anomalies Section */}
+      {transactions.length > 0 && (
+        <div>
+          <AnomalySummary anomalies={transactions.filter(t => t.isAnomalous)} />
+        </div>
+      )}
 
       {/* Transactions Table */}
       <Suspense
